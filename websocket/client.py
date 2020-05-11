@@ -7,20 +7,21 @@ from itertools import zip_longest
 from typing import DefaultDict, Deque, List, Dict, Tuple, Optional
 from gevent.event import Event
 
-from websocket.websocket_manager import WebsocketManager
+from ftx.websocket.websocket_manager import WebsocketManager
 
 
 class FtxWebsocketClient(WebsocketManager):
     _ENDPOINT = 'wss://ftx.com/ws/'
 
-    def __init__(self) -> None:
+    def __init__(self, parent = None, key = '', secret = '') -> None:
         super().__init__()
         self._trades: DefaultDict[str, Deque] = defaultdict(lambda: deque([], maxlen=10000))
         self._fills: Deque = deque([], maxlen=10000)
-        self._api_key = ''  # TODO: Place your API key here
-        self._api_secret = ''  # TODO: Place your API secret here
+        self._api_key = key
+        self._api_secret = secret
         self._orderbook_update_events: DefaultDict[str, Event] = defaultdict(Event)
         self._reset_data()
+        self._parent = parent
 
     def _on_open(self, ws):
         self._reset_data()
@@ -119,9 +120,6 @@ class FtxWebsocketClient(WebsocketManager):
 
     def _handle_orderbook_message(self, message: Dict) -> None:
         market = message['market']
-        subscription = {'channel': 'orderbook', 'market': market}
-        if subscription not in self._subscriptions:
-            return
         data = message['data']
         if data['action'] == 'partial':
             self._reset_orderbook(market)
@@ -155,9 +153,13 @@ class FtxWebsocketClient(WebsocketManager):
 
     def _handle_ticker_message(self, message: Dict) -> None:
         self._tickers[message['market']] = message['data']
+        if self._parent is not None:
+            self._parent._handle_ticker_message(message['market'], message['data'])
 
     def _handle_fills_message(self, message: Dict) -> None:
         self._fills.append(message['data'])
+        if self._parent is not None:
+            self._parent._handle_fills_message(message['data'])
 
     def _handle_orders_message(self, message: Dict) -> None:
         data = message['data']
