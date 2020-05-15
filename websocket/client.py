@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 from itertools import zip_longest
 from typing import DefaultDict, Deque, List, Dict, Tuple, Optional
 from gevent.event import Event
+from threading import Thread, Lock
 
 from ftx.websocket.websocket_manager import WebsocketManager
 
@@ -156,13 +157,17 @@ class FtxWebsocketClient(WebsocketManager):
 
     def _handle_ticker_message(self, message: Dict) -> None:
         self._tickers[message['market']] = message['data']
-        if self._parent is not None:
-            self._parent._handle_ticker_message(message['market'], message['data'])
+        parent_function = getattr(self._parent, '_handle_ticker_message', None)
+        if callable(parent_function):
+            pt = Thread(target=self._parent._handle_ticker_message, args=(message['market'], message['data']))
+            pt.start()
 
     def _handle_fills_message(self, message: Dict) -> None:
         self._fills.append(message['data'])
-        if self._parent is not None:
-            self._parent._handle_fills_message(message['data'])
+        parent_function = getattr(self._parent, '_handle_fills_message', None)
+        if callable(parent_function):
+            pt = Thread(target=self._parent._handle_fills_message, args=(smessage['data']))
+            pt.start()
 
     def _handle_orders_message(self, message: Dict) -> None:
         data = message['data']
